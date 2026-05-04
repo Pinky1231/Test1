@@ -3,55 +3,64 @@ package main
 import (
 	"fmt"
 	"sync"
+	"time"
 )
 
-var wg sync.WaitGroup
+type Cash struct {
+	data map[string]interface{}
+	mx   sync.RWMutex
+	wg   sync.WaitGroup
+}
 
 func main() {
-	ch1 := make(chan int)
-	ch2 := make(chan int)
+	Csh := Cash{
+		data: make(map[string]interface{}),
+	}
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		defer close(ch1)
-		defer close(ch2)
-		for i := range 10 {
-			if i%2 == 0 {
-				ch1 <- i
-			} else {
-				ch2 <- i
-			}
-		}
-	}()
+	// Csh.Set("Rok", "Huynya", time.Second*6)
+	// Csh.Set("Bob", 21, time.Second*3)
+	// Csh.Set("Ric_astley", 67, time.Minute*15)
+	// Csh.Set("John", 14, time.Minute*1)
 
-	data := channelmerge(ch1, ch2)
+	// fmt.Println(Csh.data)
+	// fmt.Println(Csh.Get("Rick_astley"))
+	// <-time.After(time.Second * 7)
+	// fmt.Println(Csh.data)
 
-	for res := range data {
-		fmt.Println(res, "была получена из канала")
+	Csh.wg.Wait()
+
+}
+
+func (cash *Cash) Set(key string, value interface{}, ttl time.Duration) {
+	if _, ok := cash.Get(key); !ok {
+		cash.mx.Lock()
+		defer cash.mx.Unlock()
+		cash.data[key] = value
+		cash.wg.Add(1)
+		go func(ttl time.Duration) {
+			defer cash.wg.Done()
+
+			<-time.After(ttl)
+
+			cash.mx.Lock()
+			defer cash.mx.Unlock()
+			fmt.Println(key, "был удален спустя", ttl)
+			delete(cash.data, key)
+
+		}(ttl)
 	}
 
 }
-func channelmerge(channels ...chan int) chan int {
 
-	Outchan := make(chan int)
+func (cash *Cash) Get(key string) (interface{}, bool) {
+	cash.mx.RLock()
+	defer cash.mx.RUnlock()
 
-	for _, ch := range channels {
-		wg.Add(1)
-		go func(ch chan int) {
-			defer wg.Done()
-			for val := range ch {
-				fmt.Println(val, " была отправлена в канал")
-				Outchan <- val
-
-			}
-		}(ch)
+	result, ok := cash.data[key]
+	if !ok {
+		return nil, false
+	} else {
+		return result, true
 	}
 
-	go func() {
-		wg.Wait()
-		close(Outchan)
-	}()
-
-	return Outchan
 }
